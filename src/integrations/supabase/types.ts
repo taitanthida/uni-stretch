@@ -110,6 +110,30 @@ export type Database = {
         }
         Relationships: []
       }
+      reward_redemptions: {
+        Row: {
+          id: string
+          points_spent: number
+          redeemed_at: string
+          reward_id: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          points_spent: number
+          redeemed_at?: string
+          reward_id: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          points_spent?: number
+          redeemed_at?: string
+          reward_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       stretch_sessions: {
         Row: {
           completed_at: string
@@ -169,6 +193,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      redeem_freshy_freshy_drink: {
+        Args: Record<string, never>
+        Returns: number
       }
     }
     Enums: {

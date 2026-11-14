@@ -9,7 +9,6 @@ import {
   Flame,
   Gift,
   Ticket,
-  Coffee,
   HeartPulse,
   House,
   LogOut,
@@ -27,8 +26,10 @@ import {
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
+import { toast } from "sonner";
 
 import wellnessImage from "@/assets/unistretch-wellness.jpg";
+import freshyFreshyLogo from "@/assets/freshy-freshy-logo.svg";
 import sportMassagePoster from "@/assets/sport-massage-poster.jpg";
 import { StretchStepGuide } from "@/components/stretch-step-guide";
 import { FirstLoginTour, type AppTab } from "@/components/first-login-tour";
@@ -209,7 +210,7 @@ const doctors = [
 ];
 
 const rewardPreviews = [
-  { id: "drink", title: "Healthy drink voucher", points: 100, icon: Coffee, description: "A refreshing reward for your next stretch milestone." },
+  { id: "drink", title: "Freshy Freshy drink voucher", points: 100, icon: Gift, description: "Enjoy a healthy drink from Freshy Freshy, our partner beverage shop." },
   { id: "wellness", title: "Wellness class pass", points: 250, icon: Ticket, description: "Make time for a guided wellness session." },
   { id: "desk", title: "Desk wellness kit", points: 500, icon: Gift, description: "A little extra care for your everyday workspace." },
   { id: "consult", title: "Wellness consult", points: 750, icon: HeartPulse, description: "Practical guidance for a more comfortable workday." },
@@ -268,6 +269,7 @@ export const Route = createFileRoute("/")({
 function UniStretchApp() {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [isAuthHydrated, setIsAuthHydrated] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
@@ -321,6 +323,10 @@ function UniStretchApp() {
   const [guideDetailIndex, setGuideDetailIndex] = useState<number | null>(null);
   const [exercise, setExercise] = useState<{ videoIndex: number; startedAt: number } | null>(null);
   const [tourReplayToken, setTourReplayToken] = useState(0);
+  const [isEventDetailsOpen, setIsEventDetailsOpen] = useState(false);
+  const [isPartnerAdOpen, setIsPartnerAdOpen] = useState(false);
+  const [hasPartnerAdPlayed, setHasPartnerAdPlayed] = useState(false);
+  const [partnerAdSeconds, setPartnerAdSeconds] = useState(30);
 
   const openTab = useCallback((id: AppTab, targetId: string = id) => {
     setActiveTab(id);
@@ -332,16 +338,23 @@ function UniStretchApp() {
   useEffect(() => {
     let mounted = true;
     supabase.auth.getUser().then(({ data }) => {
-      if (mounted) setUser(data.user as SessionUser | null);
+      if (mounted) {
+        setUser(data.user as SessionUser | null);
+        setIsAuthHydrated(true);
+      }
+    }).catch(() => {
+      if (mounted) setIsAuthHydrated(true);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" || event === "USER_UPDATED" || event === "INITIAL_SESSION") {
         setUser((session?.user as SessionUser | null) ?? null);
+        setIsAuthHydrated(true);
         queryClient.invalidateQueries({ queryKey: ["unistretch"] });
       }
       if (event === "SIGNED_OUT") {
         setUser(null);
+        setIsAuthHydrated(true);
         queryClient.clear();
       }
     });
@@ -461,6 +474,28 @@ function UniStretchApp() {
       return data;
     },
   });
+
+  useEffect(() => {
+    if (!isAuthHydrated) return;
+    if (user && (!adminRoleQuery.isSuccess || adminRoleQuery.data)) {
+      setIsPartnerAdOpen(false);
+      return;
+    }
+    if (isPartnerAdOpen) return;
+    const timeout = window.setTimeout(() => {
+      setPartnerAdSeconds(30);
+      setIsPartnerAdOpen(true);
+    }, hasPartnerAdPlayed ? 5 * 60 * 1000 : 0);
+    return () => window.clearTimeout(timeout);
+  }, [adminRoleQuery.data, adminRoleQuery.isSuccess, hasPartnerAdPlayed, isAuthHydrated, isPartnerAdOpen, user]);
+
+  useEffect(() => {
+    if (!isPartnerAdOpen || partnerAdSeconds === 0 || (user && adminRoleQuery.data)) return;
+    const timeout = window.setTimeout(() => {
+      setPartnerAdSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+    return () => window.clearTimeout(timeout);
+  }, [adminRoleQuery.data, isPartnerAdOpen, partnerAdSeconds, user]);
 
   const profile = profileQuery.data;
   const isThai = language === "th";
@@ -585,6 +620,25 @@ function UniStretchApp() {
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["unistretch", "profile", user?.id] }),
+  });
+
+  const redeemFreshyMutation = useMutation({
+    mutationFn: async () => {
+      if (!user) throw new Error("Please sign in to redeem this reward.");
+      const { data, error } = await supabase.rpc("redeem_freshy_freshy_drink", {});
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (remainingPoints) => {
+      queryClient.invalidateQueries({ queryKey: ["unistretch", "profile", user?.id] });
+      setSelectedReward(null);
+      toast.success("Freshy Freshy voucher redeemed", {
+        description: `Redemption confirmed. 100 points used; ${remainingPoints} points remaining.`,
+      });
+    },
+    onError: (error) => {
+      toast.error("Could not redeem the voucher", { description: error.message || "Please try again." });
+    },
   });
 
   const bookingMutation = useMutation({
@@ -776,8 +830,43 @@ function UniStretchApp() {
     reviewMutation.mutate();
   }
 
+  function dismissPartnerAd() {
+    setIsPartnerAdOpen(false);
+    setHasPartnerAdPlayed(true);
+  }
+
   return (
     <main className="min-h-screen overflow-hidden bg-background pb-28 text-foreground">
+      <Dialog
+        open={isPartnerAdOpen}
+        onOpenChange={(open) => {
+          if (open) return;
+          if (partnerAdSeconds === 0 || adminRoleQuery.data === true) dismissPartnerAd();
+        }}
+      >
+        <DialogContent
+          className="max-w-md rounded-3xl border-border bg-card text-center"
+          showCloseButton={false}
+          onEscapeKeyDown={(event) => { if (partnerAdSeconds > 0) event.preventDefault(); }}
+          onPointerDownOutside={(event) => { if (partnerAdSeconds > 0) event.preventDefault(); }}
+        >
+          <img src={freshyFreshyLogo} alt="Freshy Freshy logo" className="mx-auto size-48 rounded-3xl object-cover" />
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-center">
+            <Button type="button" variant="soft" disabled={partnerAdSeconds > 0} onClick={dismissPartnerAd}>
+              {partnerAdSeconds > 0 ? `Skip ad in ${partnerAdSeconds}s` : "Skip ad"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => toast.info("Ad-free subscriptions are coming soon", {
+                description: "Subscribe for an ad-free experience and exclusive UniStretch benefits.",
+              })}
+            >
+              Subscribe for no ads
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <section id="home" className={cn("relative scroll-mt-4 border-b border-border bg-[image:var(--gradient-hero)]", activeTab !== "home" && "hidden")}>
         <div className="absolute inset-x-0 top-0 h-2 bg-[image:var(--gradient-strip)]" />
         <div className={cn("mx-auto grid max-w-7xl gap-8 px-4 pt-5 sm:px-6 lg:px-8 lg:pt-6", user ? "pb-5" : "min-h-[80vh] pb-10 lg:grid-cols-[1.05fr_0.95fr]")}>
@@ -959,7 +1048,7 @@ function UniStretchApp() {
                 {rewardPreviews.slice(0, 3).map((reward) => {
                   const Icon = reward.icon;
                   return <button key={reward.id} type="button" onClick={() => setSelectedReward(reward)} className="flex items-center gap-3 rounded-2xl border border-border bg-surface-soft p-3 text-left transition hover:border-primary/40">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground"><Icon className="size-5" /></span>
+                    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-accent text-accent-foreground">{reward.id === "drink" ? <img src={freshyFreshyLogo} alt="" className="size-full object-cover" /> : <Icon className="size-5" />}</span>
                     <span className="min-w-0"><span className="block font-bold">{reward.title}</span><span className="text-sm text-primary">{reward.points} points</span></span>
                     <ArrowRight className="size-4 shrink-0" />
                   </button>;
@@ -981,7 +1070,18 @@ function UniStretchApp() {
                 <p className="text-sm font-bold uppercase text-primary">Campus announcement</p>
                 <h3 className="mt-2 text-2xl font-black">Sport Massage by AHS Nuadnaja</h3>
               </div>
-              <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full sm:hidden"
+                aria-expanded={isEventDetailsOpen}
+                aria-controls="health-event-details"
+                onClick={() => setIsEventDetailsOpen((open) => !open)}
+              >
+                {isEventDetailsOpen ? "Hide details" : "More details"}
+              </Button>
+              <dl id="health-event-details" className={cn("grid gap-3 text-sm sm:grid-cols-2 sm:grid", isEventDetailsOpen ? "grid" : "hidden")}>
                 <div className="rounded-2xl bg-surface-soft p-3"><dt className="font-bold text-muted-foreground">When</dt><dd className="mt-1">28 October 2026 · 09:00–11:45</dd></div>
                 <div className="rounded-2xl bg-surface-soft p-3"><dt className="font-bold text-muted-foreground">Who</dt><dd className="mt-1">University students and staff</dd></div>
                 <div className="rounded-2xl bg-surface-soft p-3 sm:col-span-2"><dt className="font-bold text-muted-foreground">Where</dt><dd className="mt-1">Main Stadium, Thammasat University · Room MS112, Main Stadium Building</dd></div>
@@ -1046,7 +1146,7 @@ function UniStretchApp() {
         <div className="mb-5 flex flex-wrap gap-2" role="group" aria-label="Filter stretches by body area">
           {videoFilters.map((filter) => <Button key={filter} size="sm" variant={videoFilter === filter ? "wellness" : "outline"} aria-pressed={videoFilter === filter} onClick={() => setVideoFilter(filter)}>{filter}</Button>)}
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filteredStretchVideos.map(({ video, index }) => (
             <Card key={video.title} className="overflow-hidden rounded-3xl border-border bg-card shadow-[var(--shadow-card)]">
               <div className="aspect-video overflow-hidden bg-muted">
@@ -1116,7 +1216,7 @@ function UniStretchApp() {
             <p className="text-sm text-muted-foreground">Choose a doctor to book an in-person appointment at {HOSPITAL_NAME}.</p>
           </CardHeader>
           <CardContent className="space-y-5">
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {doctors.map((doctor) => {
                 const selected = selectedDoctor.name === doctor.name;
                 return <div key={doctor.name} className={cn("rounded-3xl border p-4 transition", selected ? "border-primary bg-primary/10" : "border-border bg-surface-soft")}>
@@ -1324,9 +1424,18 @@ function UniStretchApp() {
             <DialogTitle>{selectedReward?.title ?? "Reward details"}</DialogTitle>
             <DialogDescription>{selectedReward?.description}</DialogDescription>
           </DialogHeader>
+          {selectedReward?.id === "drink" ? <img src={freshyFreshyLogo} alt="Freshy Freshy" className="mx-auto h-36 w-36 rounded-2xl object-cover" /> : null}
           <div className="flex items-center justify-between gap-3 rounded-2xl bg-muted p-5">
             <span className="text-2xl font-black text-primary">{selectedReward?.points ?? 0} pts</span>
-            <span className="text-sm text-muted-foreground">{isThai ? "แต้มสะสม" : "points collected"}</span>
+            {selectedReward?.id === "drink" ? (
+              <Button
+                variant="hero"
+                onClick={() => { if (requireSignedIn()) redeemFreshyMutation.mutate(); }}
+                disabled={redeemFreshyMutation.isPending || Boolean(user && streakPoints < 100)}
+              >
+                {redeemFreshyMutation.isPending ? "Redeeming..." : user && streakPoints < 100 ? "Need more points" : "Redeem"}
+              </Button>
+            ) : <span className="text-sm text-muted-foreground">{isThai ? "แต้มสะสม" : "points collected"}</span>}
           </div>
           <Button variant="soft" onClick={() => setSelectedReward(null)}>Close</Button>
         </DialogContent>
@@ -1338,7 +1447,7 @@ function UniStretchApp() {
           <div className="space-y-2">{rewardPreviews.map((reward) => {
             const Icon = reward.icon;
             return <button key={reward.id} type="button" onClick={() => { setIsRewardCatalogOpen(false); setSelectedReward(reward); }} className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-border bg-surface-soft p-3 text-left hover:border-primary/50">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-accent text-accent-foreground"><Icon className="size-5" /></span><span><span className="block font-bold">{reward.title}</span><span className="text-xs text-muted-foreground">{reward.points} points</span></span><ArrowRight className="size-4" />
+              <span className="flex size-10 items-center justify-center overflow-hidden rounded-xl bg-accent text-accent-foreground">{reward.id === "drink" ? <img src={freshyFreshyLogo} alt="" className="size-full object-cover" /> : <Icon className="size-5" />}</span><span><span className="block font-bold">{reward.title}</span><span className="text-xs text-muted-foreground">{reward.points} points · {reward.id === "drink" ? "Redeemable now" : "Preview only"}</span></span><ArrowRight className="size-4" />
             </button>;
           })}</div>
         </DialogContent>

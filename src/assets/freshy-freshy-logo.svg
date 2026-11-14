@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 332 332" role="img" aria-labelledby="title">
+  <title id="title">Freshy Freshy</title>
+  <rect width="332" height="332" rx="28" fill="#f7f5ed"/>
+  <g fill="#4d5e52">
+    <path d="M110 176V100c0-10 8-18 18-18h49v20h-30v17h26v19h-26v38h-24c-7 0-13 0-13 0Z"/>
+    <path d="M110 176h24v-26h21c13 0 21-8 21-20v-7h-22v5c0 4-2 6-7 6h-13v-2h-24Z"/>
+    <path d="M154 207v-28c0-13 9-21 22-21h23v20h-18c-3 0-5 2-5 5v24Z"/>
+    <path d="M209 66l4 12 12 4-12 4-4 12-4-12-12-4 12-4Z"/>
+  </g>
+  <text x="166" y="256" fill="#4d5e52" font-family="Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="2.6" text-anchor="middle">freshy freshy</text>
+</svg>

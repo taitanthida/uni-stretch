@@ -326,7 +326,7 @@ function UniStretchApp() {
   const [isEventDetailsOpen, setIsEventDetailsOpen] = useState(false);
   const [isPartnerAdOpen, setIsPartnerAdOpen] = useState(false);
   const [hasPartnerAdPlayed, setHasPartnerAdPlayed] = useState(false);
-  const [partnerAdSeconds, setPartnerAdSeconds] = useState(30);
+  const [partnerAdSeconds, setPartnerAdSeconds] = useState(10);
 
   const openTab = useCallback((id: AppTab, targetId: string = id) => {
     setActiveTab(id);
@@ -483,7 +483,7 @@ function UniStretchApp() {
     }
     if (isPartnerAdOpen) return;
     const timeout = window.setTimeout(() => {
-      setPartnerAdSeconds(30);
+      setPartnerAdSeconds(10);
       setIsPartnerAdOpen(true);
     }, hasPartnerAdPlayed ? 5 * 60 * 1000 : 0);
     return () => window.clearTimeout(timeout);

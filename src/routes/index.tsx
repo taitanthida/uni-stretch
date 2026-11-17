@@ -191,21 +191,24 @@ const doctors = [
     specialty: "Physiotherapy",
     availability: WEEKDAY_HOURS,
     initials: "PC",
-    photo: "/__l5e/assets-v1/b75e2d91-c5ff-4b84-9079-518c0ffd23b2/doctor-profile-one.jpg",
+    photo: "/__l5e/assets-v1/11272e07-e0f6-4647-80b1-623e08ce18e8/unistretch-doctor-profile-01.png",
+    photoFallback: "/doctor-avatars/princess-chen.svg",
   },
   {
     name: "Dr. Ryu Patel",
     specialty: "Ergonomics consult",
     availability: WEEKDAY_HOURS,
     initials: "RP",
-    photo: "/__l5e/assets-v1/e9cfb4d4-da2b-49bf-8afe-328acd845e56/doctor-profile-two.jpg",
+    photo: "/__l5e/assets-v1/aad0cb2c-0e80-4f94-9182-2b732254c039/unistretch-doctor-profile-02.png",
+    photoFallback: "/doctor-avatars/ryu-patel.svg",
   },
   {
     name: "Dr. Owen Wong",
     specialty: "Rehab medicine",
     availability: WEEKEND_HOURS,
     initials: "OW",
-    photo: "/__l5e/assets-v1/488b717b-bd09-4fad-b551-31328d9e6fcf/doctor-profile-three.jpg",
+    photo: "/__l5e/assets-v1/dc44bc68-c6ed-4ae7-8afa-7544e227bad4/unistretch-doctor-profile-03.png",
+    photoFallback: "/doctor-avatars/owen-wong.svg",
   },
 ];
 
@@ -301,7 +304,8 @@ function UniStretchApp() {
       specialty: "Physiotherapy",
       availability: WEEKDAY_HOURS,
       initials: "PC",
-      photo: "/__l5e/assets-v1/b75e2d91-c5ff-4b84-9079-518c0ffd23b2/doctor-profile-one.jpg",
+      photo: "/__l5e/assets-v1/11272e07-e0f6-4647-80b1-623e08ce18e8/unistretch-doctor-profile-01.png",
+      photoFallback: "/doctor-avatars/princess-chen.svg",
     },
   );
   const [bookingNotes, setBookingNotes] = useState("");
@@ -586,7 +590,7 @@ function UniStretchApp() {
         stretch_type: "guided reset",
         points_awarded: 10,
       });
-      if (sessionError) throw sessionError;
+      if (sessionError) throw new Error(`Saving the stretch session failed: ${sessionError.message}`);
 
       const { error: profileError } = await supabase
         .from("profiles")
@@ -596,7 +600,7 @@ function UniStretchApp() {
           last_stretch_at: now,
         })
         .eq("id", user.id);
-      if (profileError) throw profileError;
+      if (profileError) throw new Error(`Updating your points failed: ${profileError.message}`);
       return { nextPoints, nextStreak };
     },
     onSuccess: (result) => {
@@ -607,6 +611,11 @@ function UniStretchApp() {
       setStreakCelebration(result.nextStreak);
       window.setTimeout(() => setStreakCelebration(null), 2600);
       queryClient.invalidateQueries({ queryKey: ["unistretch", "profile", user?.id] });
+    },
+    onError: (error) => {
+      toast.error("Could not finish the exercise", {
+        description: getErrorMessage(error),
+      });
     },
   });
 
@@ -765,10 +774,17 @@ function UniStretchApp() {
   }
 
   function handleFinishExercise() {
-    if (!exercise || !exerciseDone) return;
+    if (!exercise) return;
+    if (!exerciseDone) {
+      toast.info("Keep going to finish the exercise", {
+        description: `${formatDuration(exerciseRemainingSeconds)} remaining.`,
+      });
+      return;
+    }
     if (user) {
       completeStretchMutation.mutate();
     } else {
+      setAuthNotice("Sign in to save your completed exercise and earn 10 points.");
       setIsAuthDialogOpen(true);
     }
   }
@@ -1129,12 +1145,12 @@ function UniStretchApp() {
                   <p className="mt-1 text-sm text-muted-foreground">remaining</p>
                 </div>
                 <Progress value={Math.min(100, (exerciseElapsedSeconds / exerciseRequiredSeconds) * 100)} className="h-2.5 bg-background" />
-                <Button variant="hero" onClick={handleFinishExercise} disabled={!exerciseDone || completeStretchMutation.isPending}>
+                <Button variant="hero" onClick={handleFinishExercise} disabled={completeStretchMutation.isPending}>
                   {completeStretchMutation.isPending
                     ? "Saving points..."
                     : exerciseDone
                       ? "Finish — earn +10 pts"
-                      : `Finish in ${formatDuration(exerciseRemainingSeconds)}`}
+                      : `Continue — ${formatDuration(exerciseRemainingSeconds)} left`}
                 </Button>
                 <Button variant="ghost" onClick={() => setExercise(null)}>
                   Cancel exercise
@@ -1221,7 +1237,14 @@ function UniStretchApp() {
                 const selected = selectedDoctor.name === doctor.name;
                 return <div key={doctor.name} className={cn("rounded-3xl border p-4 transition", selected ? "border-primary bg-primary/10" : "border-border bg-surface-soft")}>
                   <div className="flex items-center gap-3">
-                    <div className="relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-lg font-black text-primary-foreground">{doctor.initials}<img src={doctor.photo} alt="" className="absolute inset-0 size-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} /></div>
+                    <div className="relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-lg font-black text-primary-foreground">{doctor.initials}<img src={doctor.photo} alt={doctor.name} className="absolute inset-0 size-full object-cover" onError={(event) => {
+                      const image = event.currentTarget;
+                      if (image.dataset.fallback) image.style.display = "none";
+                      else {
+                        image.dataset.fallback = "true";
+                        image.src = doctor.photoFallback;
+                      }
+                    }} /></div>
                     <div className="min-w-0"><p className="font-black">{doctor.name}</p><p className="text-sm text-muted-foreground">{doctor.specialty}</p><p className="mt-1 text-xs font-bold text-primary">{doctor.availability}</p></div>
                   </div>
                   <Button type="button" variant={selected ? "wellness" : "outline"} className="mt-4 w-full" onClick={() => { setSelectedDoctor(doctor); setAppointmentDay(null); setAppointmentSlot(null); }}><CalendarCheck className="size-4" /> Book appointment</Button>
@@ -1238,7 +1261,14 @@ function UniStretchApp() {
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="flex items-center gap-3 rounded-2xl bg-muted p-3">
-              <div className="relative flex size-12 items-center justify-center overflow-hidden rounded-full bg-primary font-black text-primary-foreground">{selectedDoctor.initials}<img src={selectedDoctor.photo} alt="" className="absolute inset-0 size-full object-cover" onError={(event) => { event.currentTarget.style.display = "none"; }} /></div>
+              <div className="relative flex size-12 items-center justify-center overflow-hidden rounded-full bg-primary font-black text-primary-foreground">{selectedDoctor.initials}<img src={selectedDoctor.photo} alt={selectedDoctor.name} className="absolute inset-0 size-full object-cover" onError={(event) => {
+                const image = event.currentTarget;
+                if (image.dataset.fallback) image.style.display = "none";
+                else {
+                  image.dataset.fallback = "true";
+                  image.src = selectedDoctor.photoFallback;
+                }
+              }} /></div>
               <div><p className="font-black">{selectedDoctor.name}</p><p className="text-sm text-muted-foreground">{selectedDoctor.specialty} · {selectedDoctor.availability}</p></div>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
@@ -1526,6 +1556,14 @@ async function ensureProfile(userId: string, fallbackName: string, username?: st
     { onConflict: "id", ignoreDuplicates: true },
   );
   if (error) throw error;
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return "Please try again.";
 }
 
 function formatAppointment(iso: string) {
